@@ -3,3 +3,5 @@
 .idea
 /pretrain_models
 /output
+__pycache__/
+model/__pycache__/
