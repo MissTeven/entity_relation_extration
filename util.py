@@ -272,7 +272,7 @@ class Vocab(object):
     def __init__(self, filename, load=False, word_counter=None, threshold=0):
         if load:
             assert os.path.exists(filename), "Vocab file does not exist at " + filename
-            # load from file and ignore all other params
+            # load from file and .ignore all other params
             self.id2word, self.word2id = self.load(filename)
             self.size = len(self.id2word)
             print("Vocab size {} loaded from file".format(self.size))

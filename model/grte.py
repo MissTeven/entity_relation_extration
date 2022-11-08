@@ -14,21 +14,21 @@ class BertDecoderLayer(nn.Module):
 
     def forward(
             self,
-            hidden_states, 
+            hidden_states,
             encoder_hidden_states,
             encoder_attention_mask
     ):
         self_attention_outputs = self.attention(hidden_states)
 
-        attention_output = self_attention_outputs[0]  
-        outputs = self_attention_outputs[1:]  
+        attention_output = self_attention_outputs[0]
+        outputs = self_attention_outputs[1:]
 
         encoder_batch_size, encoder_sequence_length, _ = encoder_hidden_states.size()
         encoder_hidden_shape = (encoder_batch_size, encoder_sequence_length)
         if encoder_attention_mask.dim() == 3:
             encoder_extended_attention_mask = encoder_attention_mask[:, None, :, :]
         elif encoder_attention_mask.dim() == 2:
-            encoder_extended_attention_mask = encoder_attention_mask[:, None, None, :] 
+            encoder_extended_attention_mask = encoder_attention_mask[:, None, None, :]
         else:
             raise ValueError(
                 "Wrong shape for encoder_hidden_shape (shape {}) or encoder_attention_mask (shape {})".format(
@@ -41,13 +41,15 @@ class BertDecoderLayer(nn.Module):
             hidden_states=attention_output, encoder_hidden_states=encoder_hidden_states,
             encoder_attention_mask=encoder_extended_attention_mask
         )
-        attention_output = cross_attention_outputs[0] 
-        outputs = outputs + cross_attention_outputs[1:] 
+        attention_output = cross_attention_outputs[0]
+        outputs = outputs + cross_attention_outputs[1:]
+        intermediate_output = self.intermediate(attention_output)
         layer_output = self.output(intermediate_output, attention_output)
         outputs = (layer_output,) + outputs
         return outputs
 
 
+# 《A Novel Global Feature-Oriented Relational Triple Extraction Model based on Table Filling》
 class GRTE(BertPreTrainedModel):
     def __init__(self, config):
         super(GRTE, self).__init__(config)
@@ -108,4 +110,3 @@ class GRTE(BertPreTrainedModel):
         embed = bert_out[0]
         embed = self.dropout(embed)
         return embed
-

@@ -3,7 +3,7 @@ from transformers import WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup
 from bert4keras.tokenizers import Tokenizer
 from sklearn.model_selection import KFold
 
-from model import GRTE
+from model import *
 from util import *
 from tqdm import tqdm
 import os
@@ -11,6 +11,7 @@ import json
 from transformers import BertModel, BertConfig, BertPreTrainedModel
 import torch.nn as nn
 import torch
+from Lookahead import *
 
 
 def train():
@@ -38,7 +39,7 @@ def train():
     fold = 0
     for train_index, val_index in kf.split(all_data):
         fold += 1
-        print("="*80)
+        print("=" * 80)
         print(f"正在训练第 {fold} 折的数据")
         train_data = all_data[train_index]
         val_data = all_data[val_index]
@@ -57,7 +58,7 @@ def train():
         dataloader = data_generator(args, train_data, tokenizer, [predicate2id, id2predicate], [label2id, id2label],
                                     args.batch_size, random=True)
         val_dataloader = data_generator(args, val_data, tokenizer, [predicate2id, id2predicate], [label2id, id2label],
-                                         args.val_batch_size, random=False, is_train=False)
+                                        args.val_batch_size, random=False, is_train=False)
         t_total = len(dataloader) * args.num_train_epochs
 
         no_decay = ["bias", "LayerNorm.weight"]
@@ -69,7 +70,8 @@ def train():
             {"params": [p for n, p in train_model.named_parameters() if any(nd in n for nd in no_decay)],
              "weight_decay": 0.0},
         ]
-        optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.min_num)
+        base_optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.min_num)
+        optimizer = Lookahead(optimizer=base_optimizer, k=5, alpha=0.5)
         scheduler = get_linear_schedule_with_warmup(
             optimizer, num_warmup_steps=args.warmup * t_total, num_training_steps=t_total
         )
@@ -135,6 +137,7 @@ def train():
         torch.cuda.empty_cache()
         del train_model
 
+
 def evaluate(args, tokenizer, id2predicate, id2label, label2id, model, dataloader, evl_path):
     X, Y, Z = 1e-10, 1e-10, 1e-10
     f = open(evl_path, 'w', encoding='utf-8')
@@ -144,8 +147,9 @@ def evaluate(args, tokenizer, id2predicate, id2label, label2id, model, dataloade
         batch = [torch.tensor(d).to("cuda") for d in batch[:-1]]
         batch_token_ids, batch_mask = batch
 
-        batch_spo = extract_spo_list(args, tokenizer, id2predicate, id2label, label2id, model, batch_ex, batch_token_ids,
-                                  batch_mask)
+        batch_spo = extract_spo_list(args, tokenizer, id2predicate, id2label, label2id, model, batch_ex,
+                                     batch_token_ids,
+                                     batch_mask)
         for i, ex in enumerate(batch_ex):
             one = batch_spo[i]
             R = set([(tuple(item[0]), item[1], tuple(item[2])) for item in one])
@@ -183,13 +187,15 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', default=2e-5, type=float)
     parser.add_argument('--num_train_epochs', default=10, type=int)
     parser.add_argument('--fix_bert_embeddings', default=False, type=bool)
-    parser.add_argument('--bert_vocab_path', default="../pretrain_models/chinese_pretrain_mrc_macbert_large/vocab.txt", type=str)
-    parser.add_argument('--pretrained_model_path', default="../pretrain_models/chinese_pretrain_mrc_macbert_large", type=str)
+    parser.add_argument('--bert_vocab_path', default="pretrain_models/chinese_pretrain_mrc_macbert_large/vocab.txt",
+                        type=str)
+    parser.add_argument('--pretrained_model_path', default="pretrain_models/chinese_pretrain_mrc_macbert_large",
+                        type=str)
     parser.add_argument('--warmup', default=0.0, type=float)
     parser.add_argument('--weight_decay', default=0.0, type=float)
     parser.add_argument('--max_grad_norm', default=1.0, type=float)
     parser.add_argument('--min_num', default=1e-7, type=float)
-    parser.add_argument('--base_path', default="../data", type=str)
+    parser.add_argument('--base_path', default="data", type=str)
     parser.add_argument('--output_path', default="output", type=str)
     parser.add_argument('--result_path', default="result", type=str)
     args = parser.parse_args()

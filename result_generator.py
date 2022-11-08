@@ -31,7 +31,7 @@ class resultGenerator:
                     else:
                         total[id] = spos
 
-        origin_dataset = open('../data/bdci/test.json', 'r', encoding='utf8')
+        origin_dataset = open('data/bdci/test.json', 'r', encoding='utf8')
         origins = json.load(origin_dataset)
         self.id2text = {}
         for data in origins:
