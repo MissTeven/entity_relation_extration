@@ -1,4 +1,5 @@
 import json
+import os
 import random
 import re
 import string
@@ -6,8 +7,8 @@ import threading
 
 
 def train_generator():
-    fr = open('bdci/train_bdci.json').readlines()
-    fw = open('bdci/train.json', 'w', encoding='utf8')
+    fr = open('bdci/cleaned/train_bdci_cleaned.json').readlines()
+    fw = open('bdci/cleaned/train_cleaned.json', 'w', encoding='utf8')
 
     arr_all = []
 
@@ -184,86 +185,97 @@ def save(data, path):
     json.dump(data, open(path, 'w', encoding='utf8'), ensure_ascii=False, indent=2)
 
 
-def replaceBySynonym(synonym, maxLen):
+def replaceBySynonym(synonym, maxLen, totalCount=10000, rlTypes=['部件故障', '性能故障', '检测工具', '组成']):
     print("replaceBySynonym maxLen:{}".format(maxLen))
-    fr = open('bdci/train_bdci.json').readlines()
+    fr = open('bdci/cleaned/train_bdci_cleaned.json').readlines()
     arr_all = []
-    for line in fr:
-        line = line.strip()
-        if line == "":
-            continue
-        data = json.loads(line)
-        id = data['ID']
-        text = data['text']
-        spo_list = data['spo_list']
-        entities = {}
-        for spo in spo_list:
-            entities[spo['h']['name']] = spo['h']['pos']
-            entities[spo['t']['name']] = spo['t']['pos']
+    while len(arr_all) < totalCount:
+        for line in fr:
+            line = line.strip()
+            if line == "":
+                continue
 
-        # for (entity, entityPos) in entities.items():
-        #     print("{}:{}".format(entity, entityPos))
+            data = json.loads(line)
+            id = data['ID']
+            text = data['text']
+            spo_list = data['spo_list']
 
-        token_start_index = 0
-        temp = ""
-        # 从第一个字遍历文本
-        while token_start_index < len(text):
-            # print("token_start_index:{}".format(token_start_index))
-            token_start_index_temp = token_start_index
-            token_end_index = token_start_index + 1
-            # 当有实体是以当前词为起始的，则跳过该实体词汇
-            for entity in entities.keys():
-                if text[token_start_index:token_start_index + len(entity)] == entity:
-                    temp = temp + entity
-                    token_start_index = token_start_index + len(entity)
-                    continue
-            while token_start_index == token_start_index_temp and token_end_index < min(len(text),
-                                                                                        token_start_index + maxLen + 1):
-                # 查看当前字是否跨入实体内，跨入实体内
-                for entityPos in entities.values():
-                    entity_start_index = entityPos[0]
-                    if token_end_index > entity_start_index > token_start_index:
-                        temp = temp + text[token_start_index]
-                        token_start_index = token_start_index + 1
+            entities = {}
+            is_contain_rl_type = False
+
+            for spo in spo_list:
+                entities[spo['h']['name']] = spo['h']['pos']
+                entities[spo['t']['name']] = spo['t']['pos']
+                if spo['relation'] in rlTypes:
+                    is_contain_rl_type = True
+
+            if is_contain_rl_type is False:
+                continue
+            # for (entity, entityPos) in entities.items():
+            #     print("{}:{}".format(entity, entityPos))
+
+            token_start_index = 0
+            temp = ""
+            # 从第一个字遍历文本
+            while token_start_index < len(text):
+                # print("token_start_index:{}".format(token_start_index))
+                token_start_index_temp = token_start_index
+                token_end_index = token_start_index + 1
+                # 当有实体是以当前词为起始的，则跳过该实体词汇
+                for entity in entities.keys():
+                    if text[token_start_index:token_start_index + len(entity)] == entity:
+                        temp = temp + entity
+                        token_start_index = token_start_index + len(entity)
+                        continue
+                while token_start_index == token_start_index_temp and token_end_index < min(len(text),
+                                                                                            token_start_index + maxLen + 1):
+                    # 查看当前字是否跨入实体内，跨入实体内
+                    for entityPos in entities.values():
+                        entity_start_index = entityPos[0]
+                        if token_end_index > entity_start_index > token_start_index:
+                            temp = temp + text[token_start_index]
+                            token_start_index = token_start_index + 1
+                            break
+                    # 获取以当前字为头的词
+                    word = text[token_start_index:token_end_index]
+                    # 如果当前词拥有一个同义词
+                    if synonym.get(word) is not None:
+                        # 如果当前词具备被替换的条件：被随机选中
+                        if random.randint(0, 1) == 1:
+                            word_synos = synonym.get(word)
+                            syno = word_synos[random.randint(0, len(word_synos) - 1)]
+                            print("{}->{}".format(word, syno))
+                            # 如果替换的词和原来的词长度不一样并且实体位于替换词的右侧则需要更新实体的坐标
+                            if len(word) != len(syno):
+                                pos_diff = len(syno) - len(word)
+                                for (entity, entityPos) in entities.items():
+                                    entity_start_index = entityPos[0]
+                                    entity_end_index = entityPos[1]
+                                    if entity_start_index >= token_end_index:
+                                        entity_start_index = entity_start_index + pos_diff
+                                        entity_end_index = entity_end_index + pos_diff
+                                        entities[entity] = [entity_start_index, entity_end_index]
+                            temp = temp + syno
+                        else:
+                            temp = temp + word
+                        token_start_index = token_start_index + len(word)
                         break
-                # 获取以当前字为头的词
-                word = text[token_start_index:token_end_index]
-                # 如果当前词拥有一个同义词
-                if synonym.get(word) is not None:
-                    # 如果当前词具备被替换的条件：被随机选中
-                    if random.randint(0, 1) == 1:
-                        word_synos = synonym.get(word)
-                        syno = word_synos[random.randint(0, len(word_synos) - 1)]
-                        print("{}->{}".format(word, syno))
-                        # 如果替换的词和原来的词长度不一样并且实体位于替换词的右侧则需要更新实体的坐标
-                        if len(word) != len(syno):
-                            pos_diff = len(syno) - len(word)
-                            for (entity, entityPos) in entities.items():
-                                entity_start_index = entityPos[0]
-                                entity_end_index = entityPos[1]
-                                if entity_start_index >= token_end_index:
-                                    entity_start_index = entity_start_index + pos_diff
-                                    entity_end_index = entity_end_index + pos_diff
-                                    entities[entity] = [entity_start_index, entity_end_index]
-                        temp = temp + syno
                     else:
-                        temp = temp + word
-                    token_start_index = token_start_index + len(word)
-                    break
-                else:
-                    token_end_index = token_end_index + 1
-            if token_start_index == token_start_index_temp and token_end_index == min(len(text),
-                                                                                      token_start_index + maxLen + 1):
-                temp = temp + text[token_start_index]
-                token_start_index = token_start_index + 1
-        text = temp
-        # for (entity, entityPos) in entities.items():
-        #     print("{}:{}".format(entity, entityPos))
-        for spo in spo_list:
-            spo['h']['pos'] = entities[spo['h']['name']]
-            spo['t']['pos'] = entities[spo['t']['name']]
-        dic_single = {'id': id, 'text': text, 'spos': spo_list}
-        arr_all.append(dic_single)
+                        token_end_index = token_end_index + 1
+                if token_start_index == token_start_index_temp and token_end_index == min(len(text),
+                                                                                          token_start_index + maxLen + 1):
+                    temp = temp + text[token_start_index]
+                    token_start_index = token_start_index + 1
+            text = temp
+            # for (entity, entityPos) in entities.items():
+            #     print("{}:{}".format(entity, entityPos))
+
+            for spo in spo_list:
+                spo['h']['pos'] = entities[spo['h']['name']]
+                spo['t']['pos'] = entities[spo['t']['name']]
+
+            dic_single = {'ID': id, 'text': text, 'spo_list': spo_list}
+            arr_all.append(dic_single)
     return arr_all
 
 
@@ -287,6 +299,102 @@ def synonym():
     return synonyms
 
 
+def enhance_specific():
+    layered_synonyms = layer_synonyms()
+    rlTypes = ['性能故障', '检测工具', '组成']
+    arr_all__text_set = set([])
+    for rlType in rlTypes:
+        arr_all = []
+        for wordSynonyms in layered_synonyms:
+            if len(wordSynonyms) > 0:
+                maxLen = layered_synonyms.index(wordSynonyms) + 1
+                res = replaceBySynonym(wordSynonyms, maxLen, 1000, [rlType])
+                print("res count:{}".format(len(res)))
+                for item in res:
+                    if item["text"] not in arr_all__text_set:
+                        arr_all.append(item)
+                        arr_all__text_set.add(item["text"])
+        if len(arr_all) > 0:
+            threading.Thread(target=save(arr_all, 'bdci/cleaned/enhance_{}.json'.format(rlType))).start()
+
+
+def layer_synonyms():
+    synonyms = synonym()
+    layered_synonyms = []
+    for word, wordSynonyms in synonyms.items():
+        if len(layered_synonyms) < len(word):
+            for i in range(len(layered_synonyms), len(word)):
+                layered_synonyms.append({})
+        layered_synonyms[len(word) - 1][word] = wordSynonyms
+    return layered_synonyms
+
+
+def save(data, path):
+    print("data count:{} save:{}".format(len(data), path))
+    with open(path, 'w', encoding='utf8') as f:
+        for item in data:
+            f.write(json.dumps(item, ensure_ascii=False) + "\n")
+
+
+def clean_data():
+    fr = open('bdci/train_bdci.json').readlines()
+    arr_all = []
+    for line in fr:
+        line = line.strip()
+        if line == "":
+            continue
+
+        data = json.loads(line)
+        id = data['ID']
+        text = data['text']
+        spo_list = data['spo_list']
+
+        for i in range(0, len(spo_list)):
+            spo = spo_list[i]
+            h_name = spo['h']['name']
+            h_pos = spo['h']['pos']
+            h_indexes = indexes(text, h_name)
+            h_start = nearest(h_indexes, h_pos[0])
+            h_end = h_start + len(h_name)
+            spo['h']['pos'] = [h_start, h_end]
+
+            t_name = spo['t']['name']
+            t_pos = spo['t']['pos']
+            t_indexes = indexes(text, t_name)
+            t_start = nearest(t_indexes, t_pos[0])
+            t_end = t_start + len(t_name)
+            spo['t']['pos'] = [t_start, t_end]
+            spo_list[i] = spo
+
+        dic_single = {'ID': id, 'text': text, 'spo_list': spo_list}
+        arr_all.append(dic_single)
+
+    threading.Thread(target=save(arr_all, "bdci/cleaned/train_bdci_cleaned.json")).start()
+
+
+def indexes(string, ele):
+    res = []
+    i = 0
+    while i < len(string) - len(ele) + 1:
+        if string[i:i + len(ele)] == ele:
+            res.append(i)
+            i = i + len(ele)
+        else:
+            i = i + 1
+    return res
+
+
+def nearest(indexes, num):
+    if num <= indexes[0]:
+        return indexes[0]
+    for i in range(1, len(indexes) - 1):
+        if indexes[i - 1] < num < indexes[i + 1]:
+            return indexes[i]
+    return indexes[len(indexes) - 1]
+
+
 if __name__ == '__main__':
     cut_pattern = re.compile(r'([，。！？、])')
-    enhance()
+    # clean_data()
+    # train_generator()
+    enhance_specific()
