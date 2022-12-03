@@ -54,6 +54,7 @@ class GRTE(BertPreTrainedModel):
     def __init__(self, config):
         super(GRTE, self).__init__(config)
         self.bert = BertModel(config=config)
+
         if config.fix_bert_embeddings:
             self.bert.embeddings.word_embeddings.weight.requires_grad = False
             self.bert.embeddings.position_embeddings.weight.requires_grad = False

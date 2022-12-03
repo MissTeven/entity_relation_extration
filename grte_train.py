@@ -1,23 +1,22 @@
 import argparse
-from transformers import WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup
+import json
+
+import torch.nn as nn
 from bert4keras.tokenizers import Tokenizer
 from sklearn.model_selection import KFold
+from tqdm import tqdm
+from transformers import AdamW, get_linear_schedule_with_warmup
+from transformers import BertConfig
 
 from model import *
 from util import *
-from tqdm import tqdm
-import os
-import json
-from transformers import BertModel, BertConfig, BertPreTrainedModel
-import torch.nn as nn
-import torch
-from Lookahead import *
 
 
 def train():
     output_path = os.path.join(args.output_path)
     train_path = os.path.join(args.base_path, args.dataset, "train.json")
     rel2id_path = os.path.join(args.base_path, args.dataset, "rel2id.json")
+
     log_path = os.path.join(output_path, "log.txt")
     if not os.path.exists(output_path):
         os.makedirs(output_path)
@@ -57,8 +56,10 @@ def train():
 
         dataloader = data_generator(args, train_data, tokenizer, [predicate2id, id2predicate], [label2id, id2label],
                                     args.batch_size, random=True)
+
         val_dataloader = data_generator(args, val_data, tokenizer, [predicate2id, id2predicate], [label2id, id2label],
                                         args.val_batch_size, random=False, is_train=False)
+
         t_total = len(dataloader) * args.num_train_epochs
 
         no_decay = ["bias", "LayerNorm.weight"]
@@ -70,8 +71,10 @@ def train():
             {"params": [p for n, p in train_model.named_parameters() if any(nd in n for nd in no_decay)],
              "weight_decay": 0.0},
         ]
+
         base_optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.min_num)
-        optimizer = Lookahead(optimizer=base_optimizer, k=5, alpha=0.5)
+        optimizer = GRTEOptimizer(optimizer=base_optimizer, k=5, alpha=0.5)
+
         scheduler = get_linear_schedule_with_warmup(
             optimizer, num_warmup_steps=args.warmup * t_total, num_training_steps=t_total
         )
@@ -114,9 +117,9 @@ def train():
                     train_model.zero_grad()
                     t.set_postfix(loss="%.4lf" % (loss.cpu().item()))
                     t.update(1)
+
             f1, precision, recall = evaluate(args, tokenizer, id2predicate, id2label, label2id, train_model,
                                              val_dataloader, test_pred_path)
-
             if f1 > best_f1:
                 # Save model checkpoint
                 best_f1 = f1

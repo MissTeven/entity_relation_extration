@@ -1,11 +1,10 @@
 from collections import defaultdict
-from itertools import chain
-from torch.optim import Optimizer
+
 import torch
-import warnings
 from torch.optim.optimizer import Optimizer
 
-class Lookahead(Optimizer):
+
+class GRTEOptimizer(Optimizer):
     def __init__(self, optimizer, k=5, alpha=0.5):
         self.optimizer = optimizer
         self.k = k
@@ -63,7 +62,7 @@ class Lookahead(Optimizer):
             "state": state_dict["fast_state"],
             "param_groups": state_dict["param_groups"],
         }
-        super(Lookahead, self).load_state_dict(slow_state_dict)
+        super(GRTEOptimizer, self).load_state_dict(slow_state_dict)
         self.optimizer.load_state_dict(fast_state_dict)
         self.fast_state = self.optimizer.state
 

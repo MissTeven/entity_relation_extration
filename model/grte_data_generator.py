@@ -2,7 +2,7 @@
 import numpy as np
 
 
-class DataGenerator(object):
+class GRTEDataGenerator(object):
     def __init__(self, data, batch_size=32, buffer_size=None):
         self.data = data
         self.batch_size = batch_size
